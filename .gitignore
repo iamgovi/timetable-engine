@@ -1,0 +1,22 @@
+# Maven
+target/
+
+# Eclipse
+.project
+.classpath
+.settings/
+
+# VS Code
+.vscode/
+
+# IntelliJ
+.idea/
+
+# Node
+node_modules/
+
+# Logs
+*.log
+
+# OS Files
+.DS_Store
