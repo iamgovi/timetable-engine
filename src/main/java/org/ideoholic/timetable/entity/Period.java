@@ -26,4 +26,12 @@ public class Period {
 
     @Column(name = "is_break")
     private Boolean breakPeriod;
+
+    public Long getId() {
+        return id;
+    }
+
+    public Integer getPeriodNumber() {
+        return periodNumber;
+    }
 }

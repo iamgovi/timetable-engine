@@ -20,4 +20,8 @@ public class TeacherSubjectMapping {
     @ManyToOne
     @JoinColumn(name = "subject_id")
     private Subject subject;
+
+    public Subject getSubject() {
+        return subject;
+    }
 }

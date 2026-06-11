@@ -1,18 +1,15 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import axios from 'axios';
 
 export default function AllocationForm() {
   const [teachers, setTeachers] = useState([]);
-  const [subjects, setSubjects] = useState([]);
   const [sections, setSections] = useState([]);
   const [workingDays, setWorkingDays] = useState([]);
-  const [periods, setPeriods] = useState([]);
   const [form, setForm] = useState({
-    teacherId: '',
-    subjectId: '',
-    sectionId: '',
-    workingDayId: '',
-    periodId: ''
+    teacherIds: [],
+    classIds: [],
+    sectionIds: [],
+    workingDayId: ''
   });
   const [message, setMessage] = useState(null);
   const [assignments, setAssignments] = useState([]);
@@ -20,20 +17,16 @@ export default function AllocationForm() {
   useEffect(() => {
     const fetchAll = async () => {
       try {
-        const [tRes, sRes, secRes, wdRes, pRes, aRes] = await Promise.all([
+        const [tRes, secRes, wdRes, aRes] = await Promise.all([
           axios.get('/api/teachers'),
-          axios.get('/api/subjects'),
           axios.get('/api/sections'),
           axios.get('/api/working-days'),
-          axios.get('/api/periods'),
           axios.get('/api/timetable/assignments')
         ]);
 
         setTeachers(tRes.data || []);
-        setSubjects(sRes.data || []);
         setSections(secRes.data || []);
         setWorkingDays(wdRes.data || []);
-        setPeriods(pRes.data || []);
         setAssignments(aRes.data || []);
       } catch (err) {
         console.error(err);
@@ -45,33 +38,59 @@ export default function AllocationForm() {
   }, []);
 
   const onChange = (e) => {
-    setForm({ ...form, [e.target.name]: e.target.value });
+    const { name, value, options, multiple } = e.target;
+
+    if (multiple) {
+      const vals = Array.from(options).filter(o => o.selected).map(o => Number(o.value));
+      setForm({ ...form, [name]: vals });
+      return;
+    }
+
+    setForm({ ...form, [name]: value });
   };
 
-  const allocate = async (e) => {
+  const generateTimetable = async (e) => {
     e.preventDefault();
     setMessage(null);
     try {
-      const res = await axios.post('/api/timetable/allocate', {
-        teacherId: Number(form.teacherId),
-        subjectId: Number(form.subjectId),
-        sectionId: Number(form.sectionId),
-        workingDayId: Number(form.workingDayId),
-        periodId: Number(form.periodId)
-      });
-
-      setMessage({ type: res.data.success ? 'success' : 'error', text: res.data.message });
-
-      // refresh assignments on success
-      if (res.data.success) {
-        const aRes = await axios.get('/api/timetable/assignments');
-        setAssignments(aRes.data || []);
+      // build final sectionIds: include selected sections plus all sections of selected classes
+      const selectedSectionIds = new Set((form.sectionIds || []).map(Number));
+      if (form.classIds && form.classIds.length) {
+        sections.forEach(s => {
+          const classId = s.classMaster?.id || s.classMasterId || null;
+          if (classId && form.classIds.includes(classId)) selectedSectionIds.add(s.id);
+        });
       }
+
+      const payload = {
+        teacherIds: (form.teacherIds || []).map(Number),
+        sectionIds: Array.from(selectedSectionIds),
+        workingDayId: Number(form.workingDayId)
+      };
+
+      const res = await axios.post('/api/timetable/generate/monday', payload);
+
+      setMessage({ type: res.data.success ? 'success' : 'error', text: res.data.message || 'Generation completed' });
+
+      // refresh assignments and filter by selected working day
+      const aRes = await axios.get('/api/timetable/assignments');
+      const all = aRes.data || [];
+      const filtered = all.filter(a => Number(a.workingDayId || a.workingDay?.id) === Number(form.workingDayId));
+      setAssignments(filtered);
     } catch (err) {
       console.error(err);
-      setMessage({ type: 'error', text: 'Allocation request failed' });
+      setMessage({ type: 'error', text: 'Timetable generation failed' });
     }
   };
+
+  const classes = useMemo(() => {
+    const m = new Map();
+    sections.forEach(s => {
+      const cm = s.classMaster || (s.classMasterId ? { id: s.classMasterId, className: s.className } : null);
+      if (cm && !m.has(cm.id)) m.set(cm.id, { id: cm.id, className: cm.className });
+    });
+    return Array.from(m.values());
+  }, [sections]);
 
   return (
     <div>
@@ -81,11 +100,10 @@ export default function AllocationForm() {
         </div>
       )}
 
-      <form onSubmit={allocate} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, maxWidth: 800 }}>
+      <form onSubmit={generateTimetable} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, maxWidth: 800 }}>
         <div>
-          <label>Teacher</label>
-          <select name="teacherId" value={form.teacherId} onChange={onChange} required>
-            <option value="">-- select teacher --</option>
+          <label>Teacher (multi-select)</label>
+          <select name="teacherIds" value={form.teacherIds} onChange={onChange} multiple size={6} required>
             {teachers.map(t => (
               <option key={t.id} value={t.id}>{t.teacherName}</option>
             ))}
@@ -93,21 +111,19 @@ export default function AllocationForm() {
         </div>
 
         <div>
-          <label>Subject</label>
-          <select name="subjectId" value={form.subjectId} onChange={onChange} required>
-            <option value="">-- select subject --</option>
-            {subjects.map(s => (
-              <option key={s.id} value={s.id}>{s.subjectName}</option>
+          <label>Class (multi-select)</label>
+          <select name="classIds" value={form.classIds} onChange={onChange} multiple size={6}>
+            {classes.map(c => (
+              <option key={c.id} value={c.id}>{c.className}</option>
             ))}
           </select>
         </div>
 
         <div>
-          <label>Section</label>
-          <select name="sectionId" value={form.sectionId} onChange={onChange} required>
-            <option value="">-- select section --</option>
+          <label>Section (multi-select)</label>
+          <select name="sectionIds" value={form.sectionIds} onChange={onChange} multiple size={8}>
             {sections.map(s => (
-              <option key={s.id} value={s.id}>{s.classMaster?.className} - {s.sectionName}</option>
+              <option key={s.id} value={s.id}>{s.classMaster?.className || s.className} - {s.sectionName}</option>
             ))}
           </select>
         </div>
@@ -122,18 +138,8 @@ export default function AllocationForm() {
           </select>
         </div>
 
-        <div>
-          <label>Period</label>
-          <select name="periodId" value={form.periodId} onChange={onChange} required>
-            <option value="">-- select period --</option>
-            {periods.map(p => (
-              <option key={p.id} value={p.id}>Period {p.periodNumber} ({p.startTime} - {p.endTime})</option>
-            ))}
-          </select>
-        </div>
-
         <div style={{ gridColumn: '1 / -1' }}>
-          <button type="submit">Allocate</button>
+          <button type="submit">{`Generate ${workingDays.find(w => Number(w.id) === Number(form.workingDayId))?.dayName || 'Timetable'}`}</button>
         </div>
       </form>
 

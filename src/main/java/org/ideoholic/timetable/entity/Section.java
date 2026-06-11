@@ -24,4 +24,8 @@ public class Section {
     @ManyToOne
     @JoinColumn(name = "academic_year_id")
     private AcademicYear academicYear;
+
+    public Long getId() {
+        return id;
+    }
 }

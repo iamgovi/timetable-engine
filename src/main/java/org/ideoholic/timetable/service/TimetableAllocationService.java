@@ -16,6 +16,7 @@ import org.ideoholic.timetable.repository.SubjectRepository;
 import org.ideoholic.timetable.repository.TeacherRepository;
 import org.ideoholic.timetable.repository.TimetableAssignmentRepository;
 import org.ideoholic.timetable.repository.WorkingDayRepository;
+import org.ideoholic.timetable.service.TeacherSubjectMappingService;
 import org.springframework.stereotype.Service;
 
 import lombok.RequiredArgsConstructor;
@@ -27,6 +28,8 @@ public class TimetableAllocationService {
     private final RuleEvaluationService ruleEvaluationService;
 
     private final TeacherRepository teacherRepository;
+
+    private final TeacherSubjectMappingService teacherSubjectMappingService;
 
     private final SubjectRepository subjectRepository;
 
@@ -43,13 +46,33 @@ public class TimetableAllocationService {
 
         Teacher teacher = teacherRepository.findById(request.getTeacherId()).orElse(null);
 
-        Subject subject = subjectRepository.findById(request.getSubjectId()).orElse(null);
+        Subject subject = resolveSubject(request);
 
         Section section = sectionRepository.findById(request.getSectionId()).orElse(null);
 
         WorkingDay workingDay = workingDayRepository.findById(request.getWorkingDayId()).orElse(null);
 
         Period period = periodRepository.findById(request.getPeriodId()).orElse(null);
+
+        if (teacher == null) {
+            return new TimetableAllocationResponse(false, "Teacher Not Found");
+        }
+
+        if (subject == null) {
+            return new TimetableAllocationResponse(false, "Subject Not Found for Teacher");
+        }
+
+        if (section == null) {
+            return new TimetableAllocationResponse(false, "Section Not Found");
+        }
+
+        if (workingDay == null) {
+            return new TimetableAllocationResponse(false, "Working Day Not Found");
+        }
+
+        if (period == null) {
+            return new TimetableAllocationResponse(false, "Period Not Found");
+        }
 
         TimetableContext context = new TimetableContext();
 
@@ -97,5 +120,24 @@ public class TimetableAllocationService {
         assignmentRepository.save(assignment);
 
         return new TimetableAllocationResponse(true, "Allocation Created");
+    }
+
+    private Subject resolveSubject(TimetableAllocationRequest request) {
+        if (request.getTeacherId() == null) {
+            return null;
+        }
+
+        Subject mappedSubject = teacherSubjectMappingService.findSubjectForTeacher(
+                request.getTeacherId());
+
+        if (mappedSubject != null) {
+            return mappedSubject;
+        }
+
+        if (request.getSubjectId() != null) {
+            return subjectRepository.findById(request.getSubjectId()).orElse(null);
+        }
+
+        return null;
     }
 }

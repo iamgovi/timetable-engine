@@ -34,4 +34,20 @@ public class TeacherAvailability {
 
     @Column(name = "is_available")
     private Boolean available;
+
+    public Teacher getTeacher() {
+        return teacher;
+    }
+
+    public WorkingDay getWorkingDay() {
+        return workingDay;
+    }
+
+    public Period getPeriod() {
+        return period;
+    }
+
+    public Boolean getAvailable() {
+        return available;
+    }
 }

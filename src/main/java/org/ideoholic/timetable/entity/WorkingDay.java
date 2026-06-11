@@ -20,4 +20,8 @@ public class WorkingDay {
 
     @Column(name = "is_working")
     private Boolean working;
+
+    public Long getId() {
+        return id;
+    }
 }

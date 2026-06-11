@@ -8,4 +8,5 @@ import org.springframework.stereotype.Repository;
 public interface WorkingDayRepository
         extends JpaRepository<WorkingDay, Long> {
 
+    WorkingDay findByDayNameIgnoreCase(String dayName);
 }

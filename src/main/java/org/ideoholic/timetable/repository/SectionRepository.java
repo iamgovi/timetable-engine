@@ -7,4 +7,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface SectionRepository
         extends JpaRepository<Section, Long> {
+
+    java.util.List<Section> findByClassMasterIdIn(
+            java.util.List<Long> classMasterIds);
 }

@@ -7,4 +7,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface TeacherSubjectMappingRepository
         extends JpaRepository<TeacherSubjectMapping, Long> {
+
+    java.util.Optional<TeacherSubjectMapping> findByTeacherId(
+            Long teacherId);
 }

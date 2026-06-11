@@ -1,7 +1,9 @@
 package org.ideoholic.timetable.service;
 
 import java.util.List;
+import java.util.Optional;
 
+import org.ideoholic.timetable.entity.Subject;
 import org.ideoholic.timetable.entity.TeacherSubjectMapping;
 import org.ideoholic.timetable.repository.TeacherSubjectMappingRepository;
 import org.springframework.stereotype.Service;
@@ -23,5 +25,15 @@ public class TeacherSubjectMappingService {
     public List<TeacherSubjectMapping> findAll() {
 
         return repository.findAll();
+    }
+
+    public Subject findSubjectForTeacher(Long teacherId) {
+        Optional<TeacherSubjectMapping> mapping = repository.findByTeacherId(teacherId);
+
+        if (mapping.isPresent()) {
+            return mapping.get().getSubject();
+        }
+
+        return null;
     }
 }

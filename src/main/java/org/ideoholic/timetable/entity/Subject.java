@@ -35,4 +35,12 @@ public class Subject {
 
     @Column(name = "is_active")
     private Boolean active;
+
+    public Long getId() {
+        return id;
+    }
+
+    public Subject getPrerequisiteSubject() {
+        return prerequisiteSubject;
+    }
 }

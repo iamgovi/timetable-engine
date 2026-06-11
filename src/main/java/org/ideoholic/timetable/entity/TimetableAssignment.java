@@ -32,4 +32,44 @@ public class TimetableAssignment {
     @ManyToOne
     @JoinColumn(name = "period_id")
     private Period period;
+
+    public Teacher getTeacher() {
+        return teacher;
+    }
+
+    public Subject getSubject() {
+        return subject;
+    }
+
+    public Section getSection() {
+        return section;
+    }
+
+    public WorkingDay getWorkingDay() {
+        return workingDay;
+    }
+
+    public Period getPeriod() {
+        return period;
+    }
+
+    public void setTeacher(Teacher teacher) {
+        this.teacher = teacher;
+    }
+
+    public void setSubject(Subject subject) {
+        this.subject = subject;
+    }
+
+    public void setSection(Section section) {
+        this.section = section;
+    }
+
+    public void setWorkingDay(WorkingDay workingDay) {
+        this.workingDay = workingDay;
+    }
+
+    public void setPeriod(Period period) {
+        this.period = period;
+    }
 }

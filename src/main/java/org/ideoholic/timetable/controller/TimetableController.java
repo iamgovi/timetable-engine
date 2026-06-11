@@ -2,8 +2,10 @@ package org.ideoholic.timetable.controller;
 
 import org.ideoholic.timetable.dto.TimetableAllocationRequest;
 import org.ideoholic.timetable.dto.TimetableAllocationResponse;
+import org.ideoholic.timetable.dto.TimetableGenerationRequest;
 import org.ideoholic.timetable.service.TimetableAllocationService;
 import org.ideoholic.timetable.service.TimetableAssignmentService;
+import org.ideoholic.timetable.service.TimetableGenerationService;
 import org.ideoholic.timetable.entity.TimetableAssignment;
 import java.util.List;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -21,6 +23,7 @@ import lombok.RequiredArgsConstructor;
 public class TimetableController {
 
     private final TimetableAllocationService allocationService;
+    private final TimetableGenerationService generationService;
     private final TimetableAssignmentService assignmentService;
 
     @PostMapping("/allocate")
@@ -28,6 +31,13 @@ public class TimetableController {
             @RequestBody TimetableAllocationRequest request) {
 
         return allocationService.allocate(request);
+    }
+
+    @PostMapping("/generate/monday")
+    public List<TimetableAssignment> generateMonday(
+            @RequestBody TimetableGenerationRequest request) {
+
+        return generationService.generateMondayTimetable(request);
     }
 
     @GetMapping("/assignments")

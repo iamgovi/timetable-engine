@@ -29,4 +29,8 @@ public class Teacher {
 
     @Column(name = "is_active")
     private Boolean active;
+
+    public Long getId() {
+        return id;
+    }
 }
