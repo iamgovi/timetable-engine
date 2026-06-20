@@ -3,6 +3,7 @@ package org.ideoholic.timetable.controller;
 import org.ideoholic.timetable.dto.TimetableAllocationRequest;
 import org.ideoholic.timetable.dto.TimetableAllocationResponse;
 import org.ideoholic.timetable.dto.TimetableGenerationRequest;
+import org.ideoholic.timetable.dto.SimpleTimetableGenerationRequest;
 import org.ideoholic.timetable.service.TimetableAllocationService;
 import org.ideoholic.timetable.service.TimetableAssignmentService;
 import org.ideoholic.timetable.service.TimetableGenerationService;
@@ -38,6 +39,13 @@ public class TimetableController {
             @RequestBody TimetableGenerationRequest request) {
 
         return generationService.generateMondayTimetable(request);
+    }
+
+    @PostMapping("/generate/single-section")
+    public List<TimetableAssignment> generateSingleSection(
+            @RequestBody SimpleTimetableGenerationRequest request) {
+
+        return generationService.generateSingleSectionTimetable(request);
     }
 
     @GetMapping("/assignments")

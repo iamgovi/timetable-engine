@@ -19,6 +19,10 @@ public interface TimetableAssignmentRepository
             Teacher teacher,
             WorkingDay workingDay);
 
+    long countBySectionAndSubject(
+            Section section,
+            Subject subject);
+
     TimetableAssignment findByTeacherAndWorkingDayAndPeriod(
             Teacher teacher,
             WorkingDay workingDay,
@@ -34,4 +38,8 @@ public interface TimetableAssignmentRepository
             WorkingDay workingDay,
             Subject subject,
             Integer periodNumber);
+
+    List<TimetableAssignment> findByWorkingDayAndPeriod(
+            WorkingDay workingDay,
+            Period period);
 }
