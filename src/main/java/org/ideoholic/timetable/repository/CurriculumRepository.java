@@ -22,4 +22,8 @@ public interface CurriculumRepository
 
     List<Curriculum> findByAcademicYearId(
             Long academicYearId);
+
+    List<Curriculum> findByAcademicYearIdAndClassMasterIdIn(
+            Long academicYearId,
+            List<Long> classIds);
 }

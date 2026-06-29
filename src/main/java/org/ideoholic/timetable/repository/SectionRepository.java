@@ -10,4 +10,8 @@ public interface SectionRepository
 
     java.util.List<Section> findByClassMasterIdIn(
             java.util.List<Long> classMasterIds);
+
+    java.util.List<Section> findByAcademicYearIdAndClassMasterIdIn(
+            Long academicYearId,
+            java.util.List<Long> classMasterIds);
 }
