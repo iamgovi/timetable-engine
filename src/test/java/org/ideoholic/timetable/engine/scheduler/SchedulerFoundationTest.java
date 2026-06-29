@@ -2,8 +2,11 @@ package org.ideoholic.timetable.engine.scheduler;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -13,7 +16,12 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 
+import org.ideoholic.timetable.controller.TimetableController;
+import org.ideoholic.timetable.dto.SchoolTimetableGenerationRequest;
 import org.ideoholic.timetable.dto.SimpleTimetableGenerationRequest;
+import org.ideoholic.timetable.engine.feasibility.FeasibilityEngine;
+import org.ideoholic.timetable.engine.feasibility.FeasibilityReport;
+import org.ideoholic.timetable.engine.feasibility.ValidationIssue;
 import org.ideoholic.timetable.engine.planning.AcademicPlanningService;
 import org.ideoholic.timetable.engine.planning.models.AcademicPlan;
 import org.ideoholic.timetable.engine.planning.models.ClassDemand;
@@ -30,6 +38,8 @@ import org.ideoholic.timetable.repository.ClassMasterRepository;
 import org.ideoholic.timetable.repository.CurriculumRepository;
 import org.ideoholic.timetable.repository.SectionRepository;
 import org.ideoholic.timetable.repository.WorkingDayRepository;
+import org.ideoholic.timetable.service.TimetableAllocationService;
+import org.ideoholic.timetable.service.TimetableAssignmentService;
 import org.ideoholic.timetable.service.TimetableGenerationService;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -155,6 +165,127 @@ class SchedulerFoundationTest {
     }
 
     @Test
+    void schedulerContinuesWhenOneSectionFails() {
+        AcademicYearRepository academicYearRepository = mock(AcademicYearRepository.class);
+        ClassMasterRepository classMasterRepository = mock(ClassMasterRepository.class);
+        SectionRepository sectionRepository = mock(SectionRepository.class);
+        WorkingDayRepository workingDayRepository = mock(WorkingDayRepository.class);
+        CurriculumRepository curriculumRepository = mock(CurriculumRepository.class);
+        AcademicPlanningService planningService = mock(AcademicPlanningService.class);
+        SchedulingPriorityCalculator priorityCalculator = mock(SchedulingPriorityCalculator.class);
+        SectionScheduler sectionScheduler = mock(SectionScheduler.class);
+
+        AcademicYear academicYear = academicYear(1L);
+        ClassMaster classEight = classMaster(8L, "Class 8");
+        Section sectionA = section(1L, "A", classEight);
+        Section sectionB = section(2L, "B", classEight);
+        WorkingDay monday = workingDay(1L);
+
+        when(academicYearRepository.findById(1L)).thenReturn(Optional.of(academicYear));
+        when(classMasterRepository.findAllById(Collections.singletonList(8L)))
+                .thenReturn(Collections.singletonList(classEight));
+        when(sectionRepository.findByAcademicYearIdAndClassMasterIdIn(1L, Collections.singletonList(8L)))
+                .thenReturn(Arrays.asList(sectionA, sectionB));
+        when(workingDayRepository.findAllById(Collections.singletonList(1L)))
+                .thenReturn(Collections.singletonList(monday));
+        when(planningService.plan(any(PlanningFilter.class))).thenReturn(new AcademicPlan());
+        when(priorityCalculator.calculate(any(), any(), any())).thenReturn(100);
+        when(sectionScheduler.schedule(any()))
+                .thenThrow(new RuntimeException("boom"))
+                .thenReturn(Collections.singletonList(new TimetableAssignment()));
+        when(sectionScheduler.assignmentCount(any())).thenReturn(1);
+
+        SchoolScheduler scheduler = new SchoolScheduler(
+                academicYearRepository,
+                classMasterRepository,
+                sectionRepository,
+                workingDayRepository,
+                curriculumRepository,
+                planningService,
+                priorityCalculator,
+                sectionScheduler);
+
+        SchedulerReport report = scheduler.schedule(1L, Collections.singletonList(8L), Collections.singletonList(1L));
+
+        assertEquals(GenerationStatus.COMPLETED_WITH_FAILURES, report.getStatus());
+        assertEquals(1, report.getCompletedSections());
+        assertEquals(1, report.getFailedSections());
+        assertEquals(2, report.getSectionsProcessed());
+        assertEquals(1, report.getAssignmentsGenerated());
+        assertEquals(1, report.getWarnings().size());
+        verify(sectionScheduler, times(2)).schedule(any());
+    }
+
+    @Test
+    void schoolGenerationProcessesClassesSixThroughTen() {
+        AcademicYearRepository academicYearRepository = mock(AcademicYearRepository.class);
+        ClassMasterRepository classMasterRepository = mock(ClassMasterRepository.class);
+        SectionRepository sectionRepository = mock(SectionRepository.class);
+        WorkingDayRepository workingDayRepository = mock(WorkingDayRepository.class);
+        CurriculumRepository curriculumRepository = mock(CurriculumRepository.class);
+        AcademicPlanningService planningService = mock(AcademicPlanningService.class);
+        SchedulingPriorityCalculator priorityCalculator = mock(SchedulingPriorityCalculator.class);
+        SectionScheduler sectionScheduler = mock(SectionScheduler.class);
+
+        AcademicYear academicYear = academicYear(1L);
+        List<ClassMaster> classes = Arrays.asList(
+                classMaster(6L, "Class 6"),
+                classMaster(7L, "Class 7"),
+                classMaster(8L, "Class 8"),
+                classMaster(9L, "Class 9"),
+                classMaster(10L, "Class 10"));
+        List<Section> sections = Arrays.asList(
+                section(1L, "A", classes.get(0)),
+                section(2L, "B", classes.get(0)),
+                section(3L, "A", classes.get(1)),
+                section(4L, "B", classes.get(1)),
+                section(5L, "A", classes.get(2)),
+                section(6L, "B", classes.get(2)),
+                section(7L, "C", classes.get(2)),
+                section(8L, "D", classes.get(2)),
+                section(9L, "A", classes.get(3)),
+                section(10L, "B", classes.get(3)),
+                section(11L, "A", classes.get(4)),
+                section(12L, "B", classes.get(4)));
+        List<Long> classIds = Arrays.asList(6L, 7L, 8L, 9L, 10L);
+        List<Long> workingDayIds = Arrays.asList(1L, 2L, 3L, 4L, 5L);
+
+        when(academicYearRepository.findById(1L)).thenReturn(Optional.of(academicYear));
+        when(classMasterRepository.findAllById(classIds)).thenReturn(classes);
+        when(sectionRepository.findByAcademicYearIdAndClassMasterIdIn(1L, classIds)).thenReturn(sections);
+        when(workingDayRepository.findAllById(workingDayIds)).thenReturn(Arrays.asList(
+                workingDay(1L),
+                workingDay(2L),
+                workingDay(3L),
+                workingDay(4L),
+                workingDay(5L)));
+        when(planningService.plan(any(PlanningFilter.class))).thenReturn(new AcademicPlan());
+        when(priorityCalculator.calculate(any(), any(), any())).thenReturn(100);
+        when(sectionScheduler.schedule(any())).thenReturn(Collections.singletonList(new TimetableAssignment()));
+        when(sectionScheduler.assignmentCount(any())).thenReturn(1);
+
+        SchoolScheduler scheduler = new SchoolScheduler(
+                academicYearRepository,
+                classMasterRepository,
+                sectionRepository,
+                workingDayRepository,
+                curriculumRepository,
+                planningService,
+                priorityCalculator,
+                sectionScheduler);
+
+        SchedulerReport report = scheduler.schedule(1L, classIds, workingDayIds);
+
+        assertEquals(GenerationStatus.COMPLETED, report.getStatus());
+        assertEquals(5, report.getClassesProcessed());
+        assertEquals(12, report.getSectionsProcessed());
+        assertEquals(12, report.getCompletedSections());
+        assertEquals(12, report.getAssignmentsGenerated());
+        assertEquals(0, report.getFailedSections());
+        verify(sectionScheduler, times(12)).schedule(any());
+    }
+
+    @Test
     void schedulerReportAggregatesFailuresAndWarnings() {
         SchedulerReport report = new SchedulerReport();
         SchedulingTask task = task(classMaster(8L, "Class 8"), section(1L, "A", 8L), 0);
@@ -184,6 +315,68 @@ class SchedulerFoundationTest {
         verify(generationService).generateSingleSectionTimetable(requestCaptor.capture());
         assertEquals(5L, requestCaptor.getValue().getSectionId());
         assertEquals(Arrays.asList(1L, 2L), requestCaptor.getValue().getWorkingDayIds());
+    }
+
+    @Test
+    void schoolGenerationEndpointRunsFeasibilityThenScheduler() {
+        FeasibilityEngine feasibilityEngine = mock(FeasibilityEngine.class);
+        SchoolScheduler schoolScheduler = mock(SchoolScheduler.class);
+        SchedulerReport schedulerReport = new SchedulerReport();
+        schedulerReport.setStatus(GenerationStatus.COMPLETED);
+        when(feasibilityEngine.validate(any())).thenReturn(new FeasibilityReport());
+        when(schoolScheduler.schedule(eq(1L), eq(Collections.singletonList(8L)),
+                eq(Collections.singletonList(1L)), any(GenerationSession.class)))
+                .thenReturn(schedulerReport);
+
+        TimetableController controller = new TimetableController(
+                mock(TimetableAllocationService.class),
+                mock(TimetableGenerationService.class),
+                mock(TimetableAssignmentService.class),
+                feasibilityEngine,
+                schoolScheduler);
+        SchoolTimetableGenerationRequest request = new SchoolTimetableGenerationRequest();
+        request.setAcademicYearId(1L);
+        request.setClassIds(Collections.singletonList(8L));
+        request.setWorkingDayIds(Collections.singletonList(1L));
+
+        SchedulerReport result = controller.generateSchool(request);
+
+        assertEquals(GenerationStatus.COMPLETED, result.getStatus());
+        verify(feasibilityEngine).validate(any());
+        verify(schoolScheduler).schedule(eq(1L), eq(Collections.singletonList(8L)),
+                eq(Collections.singletonList(1L)), any(GenerationSession.class));
+    }
+
+    @Test
+    void schoolGenerationEndpointStopsWhenFeasibilityFails() {
+        FeasibilityEngine feasibilityEngine = mock(FeasibilityEngine.class);
+        SchoolScheduler schoolScheduler = mock(SchoolScheduler.class);
+        FeasibilityReport feasibilityReport = new FeasibilityReport();
+        feasibilityReport.setFeasible(false);
+        feasibilityReport.getErrors().add(new ValidationIssue(
+                "Slot Capacity",
+                "ERROR",
+                "Class 10 requires more periods than available slots.",
+                "Add working days."));
+        when(feasibilityEngine.validate(any())).thenReturn(feasibilityReport);
+
+        TimetableController controller = new TimetableController(
+                mock(TimetableAllocationService.class),
+                mock(TimetableGenerationService.class),
+                mock(TimetableAssignmentService.class),
+                feasibilityEngine,
+                schoolScheduler);
+        SchoolTimetableGenerationRequest request = new SchoolTimetableGenerationRequest();
+        request.setAcademicYearId(1L);
+        request.setClassIds(Collections.singletonList(10L));
+        request.setWorkingDayIds(Collections.singletonList(1L));
+
+        SchedulerReport result = controller.generateSchool(request);
+
+        assertEquals(GenerationStatus.FAILED, result.getStatus());
+        assertNotNull(result.getSessionId());
+        assertEquals(1, result.getWarnings().size());
+        verify(schoolScheduler, never()).schedule(any(), any(), any(), any());
     }
 
     private SchedulingTask task(

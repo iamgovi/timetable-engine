@@ -1,7 +1,5 @@
 package org.ideoholic.timetable.engine.scheduler;
 
-import java.time.Duration;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -51,7 +49,17 @@ public class SchoolScheduler {
             List<Long> classIds,
             List<Long> workingDayIds) {
 
-        Instant startedAt = Instant.now();
+        GenerationSession session = new GenerationSession();
+        return schedule(academicYearId, classIds, workingDayIds, session);
+    }
+
+    public SchedulerReport schedule(
+            Long academicYearId,
+            List<Long> classIds,
+            List<Long> workingDayIds,
+            GenerationSession session) {
+
+        session.start();
         SchedulerReport report = new SchedulerReport();
         AcademicYear academicYear = resolveAcademicYear(academicYearId);
         List<ClassMaster> classes = resolveClasses(academicYear, classIds);
@@ -66,16 +74,26 @@ public class SchoolScheduler {
                 continue;
             }
 
-            Object result = sectionScheduler.schedule(task);
-            if (result instanceof FeasibilityReport
-                    && !((FeasibilityReport) result).isFeasible()) {
-                report.recordFailure(task, "Feasibility failed for " + sectionLabel(task));
-            } else {
-                report.recordSuccess(task, sectionScheduler.assignmentCount(result));
+            try {
+                Object result = sectionScheduler.schedule(task);
+                if (result instanceof FeasibilityReport
+                        && !((FeasibilityReport) result).isFeasible()) {
+                    session.recordFailure();
+                    report.recordFailure(task, "Feasibility failed for " + sectionLabel(task));
+                } else {
+                    int assignmentCount = sectionScheduler.assignmentCount(result);
+                    session.recordSuccess(assignmentCount);
+                    report.recordSuccess(task, assignmentCount);
+                }
+            } catch (RuntimeException exception) {
+                session.recordFailure();
+                report.recordFailure(task, "Scheduling failed for " + sectionLabel(task)
+                        + ": " + exception.getMessage());
             }
         }
 
-        report.setExecutionDurationMillis(Duration.between(startedAt, Instant.now()).toMillis());
+        session.finish();
+        report.applySession(session);
         return report;
     }
 

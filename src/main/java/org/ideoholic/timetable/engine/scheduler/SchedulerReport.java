@@ -9,7 +9,13 @@ public class SchedulerReport {
 
     private final Set<Long> processedClassIds = new LinkedHashSet<>();
 
+    private String sessionId;
+
+    private GenerationStatus status;
+
     private int classesProcessed;
+
+    private int completedSections;
 
     private int sectionsProcessed;
 
@@ -23,11 +29,23 @@ public class SchedulerReport {
 
     private List<String> warnings = new ArrayList<>();
 
+    public static SchedulerReport feasibilityFailed(
+            GenerationSession session,
+            List<String> warnings) {
+
+        SchedulerReport report = new SchedulerReport();
+        report.applySession(session);
+        report.setStatus(GenerationStatus.FAILED);
+        report.setWarnings(warnings == null ? new ArrayList<>() : warnings);
+        return report;
+    }
+
     public void recordSuccess(
             SchedulingTask task,
             int assignmentCount) {
 
         recordSection(task);
+        completedSections++;
         assignmentsGenerated += Math.max(0, assignmentCount);
     }
 
@@ -43,6 +61,41 @@ public class SchedulerReport {
         }
     }
 
+    public void applySession(
+            GenerationSession session) {
+
+        if (session == null) {
+            return;
+        }
+
+        sessionId = session.getSessionId();
+        status = session.getStatus();
+        completedSections = session.getCompletedSections();
+        failedSections = session.getFailedSections();
+        assignmentsGenerated = session.getAssignmentsGenerated();
+        executionDurationMillis = session.getExecutionDurationMillis();
+    }
+
+    public String getSessionId() {
+        return sessionId;
+    }
+
+    public void setSessionId(
+            String sessionId) {
+
+        this.sessionId = sessionId;
+    }
+
+    public GenerationStatus getStatus() {
+        return status;
+    }
+
+    public void setStatus(
+            GenerationStatus status) {
+
+        this.status = status;
+    }
+
     public int getClassesProcessed() {
         return classesProcessed;
     }
@@ -51,6 +104,16 @@ public class SchedulerReport {
             int classesProcessed) {
 
         this.classesProcessed = classesProcessed;
+    }
+
+    public int getCompletedSections() {
+        return completedSections;
+    }
+
+    public void setCompletedSections(
+            int completedSections) {
+
+        this.completedSections = completedSections;
     }
 
     public int getSectionsProcessed() {
