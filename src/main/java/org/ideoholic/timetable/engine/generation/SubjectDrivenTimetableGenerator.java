@@ -11,6 +11,9 @@ import java.util.stream.Collectors;
 
 import org.ideoholic.timetable.dto.TimetableAllocationRequest;
 import org.ideoholic.timetable.dto.TimetableAllocationResponse;
+import org.ideoholic.timetable.engine.strategy.GenerationStrategy;
+import org.ideoholic.timetable.engine.strategy.models.GenerationContext;
+import org.ideoholic.timetable.engine.strategy.models.SubjectPriority;
 import org.ideoholic.timetable.entity.Period;
 import org.ideoholic.timetable.entity.Section;
 import org.ideoholic.timetable.entity.Subject;
@@ -34,7 +37,7 @@ public class SubjectDrivenTimetableGenerator
 
     private final TeacherSubjectCatalog teacherSubjectCatalog;
 
-    private final SubjectCandidateSelector subjectCandidateSelector;
+    private final GenerationStrategy generationStrategy;
 
     @Override
     public List<TimetableAssignment> generate(
@@ -80,6 +83,7 @@ public class SubjectDrivenTimetableGenerator
             Set<Long> teachersUsedInSection = new HashSet<>();
             Map<Long, Integer> weeklySubjectCount = new HashMap<>();
             Map<Long, Integer> daySubjectCount = new HashMap<>();
+            Map<Long, Integer> samePeriodSubjectCount = new HashMap<>();
 
             List<TimetableAssignment> previousAssignments = assignmentRepository
                     .findBySectionAndWorkingDayIdLessThan(section, workingDay.getId());
@@ -119,15 +123,27 @@ public class SubjectDrivenTimetableGenerator
                         section,
                         workingDay,
                         period);
+                samePeriodSubjectCount.clear();
+                countSamePeriodSubjects(
+                        previousAssignments,
+                        currentDayAssignments,
+                        period,
+                        samePeriodSubjectCount);
 
-                List<SubjectCandidate> candidateSubjects = subjectCandidateSelector.selectCandidates(
-                        availableSubjects,
-                        teachersBySubjectId,
-                        occupiedTeacherIds,
-                        weeklySubjectCount,
-                        daySubjectCount,
-                        previousPeriodSubjectId,
-                        previousDayPeriodSubjectId);
+                List<SubjectPriority> candidateSubjects = generationStrategy.prioritize(
+                        generationContext(
+                                section,
+                                workingDay,
+                                period,
+                                periods.size(),
+                                availableSubjects,
+                                teachersBySubjectId,
+                                occupiedTeacherIds,
+                                weeklySubjectCount,
+                                daySubjectCount,
+                                samePeriodSubjectCount,
+                                previousPeriodSubjectId,
+                                previousDayPeriodSubjectId));
 
                 if (candidateSubjects.isEmpty()) {
                     continue;
@@ -135,7 +151,7 @@ public class SubjectDrivenTimetableGenerator
 
                 boolean assigned = false;
 
-                for (SubjectCandidate subjectCandidate : candidateSubjects) {
+                for (SubjectPriority subjectCandidate : candidateSubjects) {
                     Subject subject = subjectCandidate.getSubject();
                     List<Teacher> subjectTeachers = teachersBySubjectId
                             .getOrDefault(subject.getId(), new ArrayList<>());
@@ -193,6 +209,72 @@ public class SubjectDrivenTimetableGenerator
         }
 
         return generated;
+    }
+
+    private GenerationContext generationContext(
+            Section section,
+            WorkingDay workingDay,
+            Period period,
+            int periodsInDay,
+            List<Subject> availableSubjects,
+            Map<Long, List<Teacher>> teachersBySubjectId,
+            Set<Long> occupiedTeacherIds,
+            Map<Long, Integer> weeklySubjectCount,
+            Map<Long, Integer> daySubjectCount,
+            Map<Long, Integer> samePeriodSubjectCount,
+            Long previousPeriodSubjectId,
+            Long previousDayPeriodSubjectId) {
+
+        GenerationContext context = new GenerationContext();
+        context.setSection(section);
+        context.setWorkingDay(workingDay);
+        context.setPeriod(period);
+        context.setPeriodsInDay(periodsInDay);
+        context.setAvailableSubjects(availableSubjects);
+        context.setTeachersBySubjectId(teachersBySubjectId);
+        context.setOccupiedTeacherIds(occupiedTeacherIds);
+        context.setWeeklySubjectCount(weeklySubjectCount);
+        context.setDaySubjectCount(daySubjectCount);
+        context.setSamePeriodSubjectCount(samePeriodSubjectCount);
+        context.setPreviousPeriodSubjectId(previousPeriodSubjectId);
+        context.setPreviousDayPeriodSubjectId(previousDayPeriodSubjectId);
+        return context;
+    }
+
+    private void countSamePeriodSubjects(
+            List<TimetableAssignment> previousAssignments,
+            List<TimetableAssignment> currentDayAssignments,
+            Period period,
+            Map<Long, Integer> samePeriodSubjectCount) {
+
+        countSamePeriodSubjects(previousAssignments, period, samePeriodSubjectCount);
+        countSamePeriodSubjects(currentDayAssignments, period, samePeriodSubjectCount);
+    }
+
+    private void countSamePeriodSubjects(
+            List<TimetableAssignment> assignments,
+            Period period,
+            Map<Long, Integer> samePeriodSubjectCount) {
+
+        if (period == null || period.getPeriodNumber() == null) {
+            return;
+        }
+
+        for (TimetableAssignment assignment : assignments) {
+            if (assignment.getPeriod() == null
+                    || assignment.getPeriod().getPeriodNumber() == null
+                    || assignment.getSubject() == null
+                    || assignment.getSubject().getId() == null) {
+                continue;
+            }
+
+            if (period.getPeriodNumber().equals(assignment.getPeriod().getPeriodNumber())) {
+                samePeriodSubjectCount.merge(
+                        assignment.getSubject().getId(),
+                        1,
+                        Integer::sum);
+            }
+        }
     }
 
     private Long findPreviousPeriodSubjectId(
