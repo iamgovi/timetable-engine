@@ -2,15 +2,15 @@ package org.ideoholic.timetable.engine.scheduler;
 
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.stream.Collectors;
 
 import org.ideoholic.timetable.engine.feasibility.FeasibilityReport;
 import org.ideoholic.timetable.engine.planning.AcademicPlanningService;
 import org.ideoholic.timetable.engine.planning.models.AcademicPlan;
 import org.ideoholic.timetable.engine.planning.models.PlanningFilter;
+import org.ideoholic.timetable.engine.scheduler.policy.SchedulingPolicy;
+import org.ideoholic.timetable.engine.scheduler.policy.SchedulingPolicyFactory;
 import org.ideoholic.timetable.entity.AcademicYear;
 import org.ideoholic.timetable.entity.ClassMaster;
 import org.ideoholic.timetable.entity.Section;
@@ -40,7 +40,7 @@ public class SchoolScheduler {
 
     private final AcademicPlanningService planningService;
 
-    private final SchedulingPriorityCalculator priorityCalculator;
+    private final SchedulingPolicyFactory schedulingPolicyFactory;
 
     private final SectionScheduler sectionScheduler;
 
@@ -104,8 +104,7 @@ public class SchoolScheduler {
             List<WorkingDay> workingDays,
             AcademicPlan plan) {
 
-        Map<Long, Integer> sectionCountByClassId = sectionCountByClassId(sections);
-        SchedulingQueue queue = new SchedulingQueue();
+        List<SchedulingTask> tasks = new ArrayList<>();
 
         for (Section section : sections) {
             if (section.getClassMaster() == null) {
@@ -117,12 +116,11 @@ public class SchoolScheduler {
                     section.getClassMaster(),
                     section,
                     new ArrayList<>(workingDays));
-            task.setPriorityScore(priorityCalculator.calculate(task, plan, sectionCountByClassId));
-            queue.add(task);
+            tasks.add(task);
         }
 
-        queue.order();
-        return queue;
+        SchedulingPolicy policy = schedulingPolicyFactory.activePolicy();
+        return new SchedulingQueue(policy.prioritize(tasks, plan));
     }
 
     private AcademicYear resolveAcademicYear(
@@ -219,18 +217,6 @@ public class SchoolScheduler {
                 .map(ClassMaster::getId)
                 .collect(Collectors.toList()));
         return filter;
-    }
-
-    private Map<Long, Integer> sectionCountByClassId(
-            List<Section> sections) {
-
-        Map<Long, Integer> sectionCountByClassId = new LinkedHashMap<>();
-        for (Section section : sections) {
-            if (section.getClassMaster() != null && section.getClassMaster().getId() != null) {
-                sectionCountByClassId.merge(section.getClassMaster().getId(), 1, Integer::sum);
-            }
-        }
-        return sectionCountByClassId;
     }
 
     private String sectionLabel(

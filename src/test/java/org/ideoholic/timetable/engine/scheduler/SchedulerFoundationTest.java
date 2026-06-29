@@ -28,6 +28,9 @@ import org.ideoholic.timetable.engine.planning.models.ClassDemand;
 import org.ideoholic.timetable.engine.planning.models.PlanningFilter;
 import org.ideoholic.timetable.engine.planning.models.SubjectDemand;
 import org.ideoholic.timetable.engine.planning.models.TeacherRequirement;
+import org.ideoholic.timetable.engine.scheduler.policy.BalancedSchedulingPolicy;
+import org.ideoholic.timetable.engine.scheduler.policy.SchedulingPolicy;
+import org.ideoholic.timetable.engine.scheduler.policy.SchedulingPolicyFactory;
 import org.ideoholic.timetable.entity.AcademicYear;
 import org.ideoholic.timetable.entity.ClassMaster;
 import org.ideoholic.timetable.entity.Section;
@@ -88,8 +91,9 @@ class SchedulerFoundationTest {
 
     @Test
     void buildQueueCreatesOneTaskPerSection() {
-        SchedulingPriorityCalculator priorityCalculator = mock(SchedulingPriorityCalculator.class);
-        when(priorityCalculator.calculate(any(), any(), any())).thenReturn(100);
+        SchedulingPolicy policy = mock(SchedulingPolicy.class);
+        SchedulingPolicyFactory policyFactory = mock(SchedulingPolicyFactory.class);
+        when(policyFactory.activePolicy()).thenReturn(policy);
         SchoolScheduler scheduler = new SchoolScheduler(
                 null,
                 null,
@@ -97,13 +101,14 @@ class SchedulerFoundationTest {
                 null,
                 null,
                 null,
-                priorityCalculator,
+                policyFactory,
                 null);
 
         ClassMaster classEight = classMaster(8L, "Class 8");
         List<Section> sections = Arrays.asList(
                 section(1L, "A", classEight),
                 section(2L, "B", classEight));
+        when(policy.prioritize(any(), any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         SchedulingQueue queue = scheduler.buildQueue(
                 academicYear(1L),
@@ -113,7 +118,8 @@ class SchedulerFoundationTest {
                 new AcademicPlan());
 
         assertEquals(2, queue.size());
-        verify(priorityCalculator, times(2)).calculate(any(), any(), any());
+        verify(policyFactory).activePolicy();
+        verify(policy).prioritize(any(), any());
     }
 
     @Test
@@ -124,7 +130,7 @@ class SchedulerFoundationTest {
         WorkingDayRepository workingDayRepository = mock(WorkingDayRepository.class);
         CurriculumRepository curriculumRepository = mock(CurriculumRepository.class);
         AcademicPlanningService planningService = mock(AcademicPlanningService.class);
-        SchedulingPriorityCalculator priorityCalculator = mock(SchedulingPriorityCalculator.class);
+        SchedulingPolicyFactory policyFactory = balancedPolicyFactory();
         SectionScheduler sectionScheduler = mock(SectionScheduler.class);
 
         AcademicYear academicYear = academicYear(1L);
@@ -141,7 +147,6 @@ class SchedulerFoundationTest {
         when(workingDayRepository.findAllById(Collections.singletonList(1L)))
                 .thenReturn(Collections.singletonList(monday));
         when(planningService.plan(any(PlanningFilter.class))).thenReturn(new AcademicPlan());
-        when(priorityCalculator.calculate(any(), any(), any())).thenReturn(100);
         when(sectionScheduler.schedule(any())).thenReturn(Collections.singletonList(new TimetableAssignment()));
         when(sectionScheduler.assignmentCount(any())).thenReturn(1);
 
@@ -152,7 +157,7 @@ class SchedulerFoundationTest {
                 workingDayRepository,
                 curriculumRepository,
                 planningService,
-                priorityCalculator,
+                policyFactory,
                 sectionScheduler);
 
         SchedulerReport report = scheduler.schedule(1L, Collections.singletonList(8L), Collections.singletonList(1L));
@@ -172,7 +177,7 @@ class SchedulerFoundationTest {
         WorkingDayRepository workingDayRepository = mock(WorkingDayRepository.class);
         CurriculumRepository curriculumRepository = mock(CurriculumRepository.class);
         AcademicPlanningService planningService = mock(AcademicPlanningService.class);
-        SchedulingPriorityCalculator priorityCalculator = mock(SchedulingPriorityCalculator.class);
+        SchedulingPolicyFactory policyFactory = balancedPolicyFactory();
         SectionScheduler sectionScheduler = mock(SectionScheduler.class);
 
         AcademicYear academicYear = academicYear(1L);
@@ -189,7 +194,6 @@ class SchedulerFoundationTest {
         when(workingDayRepository.findAllById(Collections.singletonList(1L)))
                 .thenReturn(Collections.singletonList(monday));
         when(planningService.plan(any(PlanningFilter.class))).thenReturn(new AcademicPlan());
-        when(priorityCalculator.calculate(any(), any(), any())).thenReturn(100);
         when(sectionScheduler.schedule(any()))
                 .thenThrow(new RuntimeException("boom"))
                 .thenReturn(Collections.singletonList(new TimetableAssignment()));
@@ -202,7 +206,7 @@ class SchedulerFoundationTest {
                 workingDayRepository,
                 curriculumRepository,
                 planningService,
-                priorityCalculator,
+                policyFactory,
                 sectionScheduler);
 
         SchedulerReport report = scheduler.schedule(1L, Collections.singletonList(8L), Collections.singletonList(1L));
@@ -224,7 +228,7 @@ class SchedulerFoundationTest {
         WorkingDayRepository workingDayRepository = mock(WorkingDayRepository.class);
         CurriculumRepository curriculumRepository = mock(CurriculumRepository.class);
         AcademicPlanningService planningService = mock(AcademicPlanningService.class);
-        SchedulingPriorityCalculator priorityCalculator = mock(SchedulingPriorityCalculator.class);
+        SchedulingPolicyFactory policyFactory = balancedPolicyFactory();
         SectionScheduler sectionScheduler = mock(SectionScheduler.class);
 
         AcademicYear academicYear = academicYear(1L);
@@ -260,7 +264,6 @@ class SchedulerFoundationTest {
                 workingDay(4L),
                 workingDay(5L)));
         when(planningService.plan(any(PlanningFilter.class))).thenReturn(new AcademicPlan());
-        when(priorityCalculator.calculate(any(), any(), any())).thenReturn(100);
         when(sectionScheduler.schedule(any())).thenReturn(Collections.singletonList(new TimetableAssignment()));
         when(sectionScheduler.assignmentCount(any())).thenReturn(1);
 
@@ -271,7 +274,7 @@ class SchedulerFoundationTest {
                 workingDayRepository,
                 curriculumRepository,
                 planningService,
-                priorityCalculator,
+                policyFactory,
                 sectionScheduler);
 
         SchedulerReport report = scheduler.schedule(1L, classIds, workingDayIds);
@@ -391,6 +394,12 @@ class SchedulerFoundationTest {
         task.setWorkingDays(Collections.singletonList(workingDay(1L)));
         task.setPriorityScore(priorityScore);
         return task;
+    }
+
+    private SchedulingPolicyFactory balancedPolicyFactory() {
+        return new SchedulingPolicyFactory(
+                Collections.singletonList(new BalancedSchedulingPolicy()),
+                "balanced");
     }
 
     private AcademicYear academicYear(
