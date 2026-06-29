@@ -2,6 +2,9 @@ package org.ideoholic.timetable.controller;
 
 import java.util.List;
 
+import org.ideoholic.timetable.dto.FeasibilityRequest;
+import org.ideoholic.timetable.engine.feasibility.FeasibilityEngine;
+import org.ideoholic.timetable.engine.feasibility.FeasibilityReport;
 import org.ideoholic.timetable.engine.planning.AcademicPlanningService;
 import org.ideoholic.timetable.engine.planning.models.AcademicPlan;
 import org.ideoholic.timetable.engine.planning.models.ClassDemand;
@@ -11,6 +14,8 @@ import org.ideoholic.timetable.engine.planning.models.SubjectDemand;
 import org.ideoholic.timetable.engine.planning.models.TeacherRequirement;
 import org.ideoholic.timetable.engine.planning.models.TeacherUtilization;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -23,6 +28,8 @@ import lombok.RequiredArgsConstructor;
 public class PlanningController {
 
     private final AcademicPlanningService planningService;
+
+    private final FeasibilityEngine feasibilityEngine;
 
     @GetMapping
     public AcademicPlan plan(
@@ -76,6 +83,13 @@ public class PlanningController {
             @RequestParam(required = false) List<Long> sectionIds) {
 
         return planningService.plan(filter(academicYearId, classIds, sectionIds)).getClassDemands();
+    }
+
+    @PostMapping("/feasibility")
+    public FeasibilityReport feasibility(
+            @RequestBody FeasibilityRequest request) {
+
+        return feasibilityEngine.validate(request);
     }
 
     private PlanningFilter filter(

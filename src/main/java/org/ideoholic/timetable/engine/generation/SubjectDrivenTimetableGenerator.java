@@ -1,7 +1,6 @@
 package org.ideoholic.timetable.engine.generation;
 
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -11,6 +10,13 @@ import java.util.stream.Collectors;
 
 import org.ideoholic.timetable.dto.TimetableAllocationRequest;
 import org.ideoholic.timetable.dto.TimetableAllocationResponse;
+import org.ideoholic.timetable.engine.planning.AcademicPlanningService;
+import org.ideoholic.timetable.engine.planning.models.AcademicPlan;
+import org.ideoholic.timetable.engine.planning.models.PlanningFilter;
+import org.ideoholic.timetable.engine.planning.models.TeacherUtilization;
+import org.ideoholic.timetable.engine.scoring.ScoringContext;
+import org.ideoholic.timetable.engine.scoring.ScoringEngine;
+import org.ideoholic.timetable.engine.scoring.ScoringResult;
 import org.ideoholic.timetable.engine.strategy.GenerationStrategy;
 import org.ideoholic.timetable.engine.strategy.models.GenerationContext;
 import org.ideoholic.timetable.engine.strategy.models.SubjectPriority;
@@ -39,11 +45,17 @@ public class SubjectDrivenTimetableGenerator
 
     private final GenerationStrategy generationStrategy;
 
+    private final ScoringEngine scoringEngine;
+
+    private final AcademicPlanningService academicPlanningService;
+
     @Override
     public List<TimetableAssignment> generate(
             TimetableGenerationPlan plan) {
 
         TeacherSubjectCatalog.Catalog catalog = teacherSubjectCatalog.build(plan.getTeachers());
+        Map<Long, TeacherUtilization> teacherUtilizationByTeacherId =
+                teacherUtilizationByTeacherId(plan.getSections());
         List<TimetableAssignment> generated = new ArrayList<>();
 
         for (WorkingDay workingDay : plan.getWorkingDays()) {
@@ -52,7 +64,8 @@ public class SubjectDrivenTimetableGenerator
                     plan.getPeriods(),
                     workingDay,
                     catalog.getSubjects(),
-                    catalog.getTeachersBySubjectId()));
+                    catalog.getTeachersBySubjectId(),
+                    teacherUtilizationByTeacherId));
         }
 
         return generated;
@@ -63,7 +76,8 @@ public class SubjectDrivenTimetableGenerator
             List<Period> periods,
             WorkingDay workingDay,
             List<Subject> availableSubjects,
-            Map<Long, List<Teacher>> teachersBySubjectId) {
+            Map<Long, List<Teacher>> teachersBySubjectId,
+            Map<Long, TeacherUtilization> teacherUtilizationByTeacherId) {
 
         Map<Long, Set<Long>> occupiedTeacherIdsByPeriod = new HashMap<>();
         for (Period period : periods) {
@@ -130,8 +144,7 @@ public class SubjectDrivenTimetableGenerator
                         period,
                         samePeriodSubjectCount);
 
-                List<SubjectPriority> candidateSubjects = generationStrategy.prioritize(
-                        generationContext(
+                GenerationContext generationContext = generationContext(
                                 section,
                                 workingDay,
                                 period,
@@ -143,61 +156,36 @@ public class SubjectDrivenTimetableGenerator
                                 daySubjectCount,
                                 samePeriodSubjectCount,
                                 previousPeriodSubjectId,
-                                previousDayPeriodSubjectId));
+                        previousDayPeriodSubjectId);
+
+                List<SubjectPriority> candidateSubjects = generationStrategy.prioritize(
+                        generationContext);
 
                 if (candidateSubjects.isEmpty()) {
                     continue;
                 }
 
-                boolean assigned = false;
+                List<ScoringResult> scoredCandidates = scoringEngine.rank(
+                        scoringContexts(
+                                generationContext,
+                                candidateSubjects,
+                                teachersBySubjectId,
+                                occupiedTeacherIds,
+                                teacherUsageCount,
+                                teacherUtilizationByTeacherId));
 
-                for (SubjectPriority subjectCandidate : candidateSubjects) {
-                    Subject subject = subjectCandidate.getSubject();
-                    List<Teacher> subjectTeachers = teachersBySubjectId
-                            .getOrDefault(subject.getId(), new ArrayList<>());
-
-                    List<Teacher> eligibleTeachers = subjectTeachers.stream()
-                            .filter(teacher -> !occupiedTeacherIds.contains(teacher.getId()))
-                            .sorted(Comparator
-                                    .comparingInt((Teacher teacher) -> teachersUsedInSection
-                                            .contains(teacher.getId()) ? 1 : 0)
-                                    .thenComparingInt(teacher -> teacherUsageCount.getOrDefault(
-                                            teacher.getId(), 0))
-                                    .thenComparingLong(Teacher::getId))
-                            .collect(Collectors.toList());
-
-                    for (Teacher teacher : eligibleTeachers) {
-                        TimetableAllocationRequest allocationRequest = new TimetableAllocationRequest();
-                        allocationRequest.setTeacherId(teacher.getId());
-                        allocationRequest.setSubjectId(subject.getId());
-                        allocationRequest.setSectionId(section.getId());
-                        allocationRequest.setWorkingDayId(workingDay.getId());
-                        allocationRequest.setPeriodId(periodId);
-
-                        TimetableAllocationResponse response = allocationService.allocate(
-                                allocationRequest);
-
-                        if (Boolean.TRUE.equals(response.getSuccess())) {
-                            TimetableAssignment assignment = assignmentRepository
-                                    .findByTeacherAndWorkingDayAndPeriod(teacher, workingDay, period);
-
-                            if (assignment != null) {
-                                generated.add(assignment);
-                                occupiedTeacherIds.add(teacher.getId());
-                                teachersUsedInSection.add(teacher.getId());
-                                teacherUsageCount.merge(teacher.getId(), 1, Integer::sum);
-                                weeklySubjectCount.merge(subject.getId(), 1, Integer::sum);
-                                daySubjectCount.merge(subject.getId(), 1, Integer::sum);
-                                assigned = true;
-                                break;
-                            }
-                        }
-                    }
-
-                    if (assigned) {
-                        break;
-                    }
-                }
+                boolean assigned = tryScoredCandidates(
+                        scoredCandidates,
+                        section,
+                        workingDay,
+                        period,
+                        periodId,
+                        occupiedTeacherIds,
+                        teachersUsedInSection,
+                        teacherUsageCount,
+                        weeklySubjectCount,
+                        daySubjectCount,
+                        generated);
 
                 if (!assigned) {
                     System.out.println(
@@ -209,6 +197,135 @@ public class SubjectDrivenTimetableGenerator
         }
 
         return generated;
+    }
+
+    private boolean tryScoredCandidates(
+            List<ScoringResult> scoredCandidates,
+            Section section,
+            WorkingDay workingDay,
+            Period period,
+            Long periodId,
+            Set<Long> occupiedTeacherIds,
+            Set<Long> teachersUsedInSection,
+            Map<Long, Integer> teacherUsageCount,
+            Map<Long, Integer> weeklySubjectCount,
+            Map<Long, Integer> daySubjectCount,
+            List<TimetableAssignment> generated) {
+
+        for (ScoringResult scoredCandidate : scoredCandidates) {
+            Subject subject = scoredCandidate.getSubject();
+            Teacher teacher = scoredCandidate.getTeacher();
+
+            TimetableAllocationRequest allocationRequest = new TimetableAllocationRequest();
+            allocationRequest.setTeacherId(teacher.getId());
+            allocationRequest.setSubjectId(subject.getId());
+            allocationRequest.setSectionId(section.getId());
+            allocationRequest.setWorkingDayId(workingDay.getId());
+            allocationRequest.setPeriodId(periodId);
+
+            TimetableAllocationResponse response = allocationService.allocate(allocationRequest);
+
+            if (Boolean.TRUE.equals(response.getSuccess())) {
+                TimetableAssignment assignment = assignmentRepository
+                        .findByTeacherAndWorkingDayAndPeriod(teacher, workingDay, period);
+
+                if (assignment != null) {
+                    generated.add(assignment);
+                    occupiedTeacherIds.add(teacher.getId());
+                    teachersUsedInSection.add(teacher.getId());
+                    teacherUsageCount.merge(teacher.getId(), 1, Integer::sum);
+                    weeklySubjectCount.merge(subject.getId(), 1, Integer::sum);
+                    daySubjectCount.merge(subject.getId(), 1, Integer::sum);
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private List<ScoringContext> scoringContexts(
+            GenerationContext generationContext,
+            List<SubjectPriority> candidateSubjects,
+            Map<Long, List<Teacher>> teachersBySubjectId,
+            Set<Long> occupiedTeacherIds,
+            Map<Long, Integer> teacherUsageCount,
+            Map<Long, TeacherUtilization> teacherUtilizationByTeacherId) {
+
+        Map<Long, String> categoryBySubjectId = new HashMap<>();
+        candidateSubjects.stream()
+                .filter(candidate -> candidate.getSubject() != null)
+                .filter(candidate -> candidate.getSubject().getId() != null)
+                .forEach(candidate -> categoryBySubjectId.put(
+                        candidate.getSubject().getId(),
+                        candidate.getCategoryName()));
+
+        List<ScoringContext> contexts = new ArrayList<>();
+        for (SubjectPriority subjectCandidate : candidateSubjects) {
+            Subject subject = subjectCandidate.getSubject();
+            if (subject == null || subject.getId() == null) {
+                continue;
+            }
+
+            List<Teacher> eligibleTeachers = teachersBySubjectId
+                    .getOrDefault(subject.getId(), new ArrayList<>())
+                    .stream()
+                    .filter(teacher -> teacher.getId() != null)
+                    .filter(teacher -> !occupiedTeacherIds.contains(teacher.getId()))
+                    .collect(Collectors.toList());
+
+            for (Teacher teacher : eligibleTeachers) {
+                ScoringContext context = new ScoringContext();
+                context.setGenerationContext(generationContext);
+                context.setSubjectPriority(subjectCandidate);
+                context.setTeacher(teacher);
+                context.setTeacherUsageCount(teacherUsageCount);
+                context.setTeacherUtilizationByTeacherId(teacherUtilizationByTeacherId);
+                context.setCategoryBySubjectId(categoryBySubjectId);
+                contexts.add(context);
+            }
+        }
+
+        return contexts;
+    }
+
+    private Map<Long, TeacherUtilization> teacherUtilizationByTeacherId(
+            List<Section> sections) {
+
+        PlanningFilter filter = new PlanningFilter();
+        filter.setAcademicYearId(firstAcademicYearId(sections));
+        filter.setClassIds(classIds(sections));
+
+        AcademicPlan academicPlan = academicPlanningService.plan(filter);
+        return academicPlan.getTeacherUtilizations()
+                .stream()
+                .filter(utilization -> utilization.getTeacherId() != null)
+                .collect(Collectors.toMap(
+                        TeacherUtilization::getTeacherId,
+                        utilization -> utilization,
+                        (left, right) -> left));
+    }
+
+    private Long firstAcademicYearId(
+            List<Section> sections) {
+
+        return sections.stream()
+                .filter(section -> section.getAcademicYear() != null)
+                .map(section -> section.getAcademicYear().getId())
+                .filter(id -> id != null)
+                .findFirst()
+                .orElse(null);
+    }
+
+    private List<Long> classIds(
+            List<Section> sections) {
+
+        return sections.stream()
+                .filter(section -> section.getClassMaster() != null)
+                .map(section -> section.getClassMaster().getId())
+                .filter(id -> id != null)
+                .distinct()
+                .collect(Collectors.toList());
     }
 
     private GenerationContext generationContext(

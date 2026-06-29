@@ -9,10 +9,13 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import org.ideoholic.timetable.dto.FeasibilityRequest;
 import org.ideoholic.timetable.dto.TimetableAllocationRequest;
 import org.ideoholic.timetable.dto.TimetableAllocationResponse;
 import org.ideoholic.timetable.dto.TimetableGenerationRequest;
 import org.ideoholic.timetable.dto.SimpleTimetableGenerationRequest;
+import org.ideoholic.timetable.engine.feasibility.FeasibilityEngine;
+import org.ideoholic.timetable.engine.feasibility.FeasibilityReport;
 import org.ideoholic.timetable.engine.generation.TimetableGenerationPlan;
 import org.ideoholic.timetable.engine.generation.TimetableGenerator;
 import org.ideoholic.timetable.entity.Period;
@@ -47,10 +50,12 @@ public class TimetableGenerationService {
 
     private final TimetableAssignmentRepository assignmentRepository;
 
+    private final FeasibilityEngine feasibilityEngine;
+
     @Qualifier("subjectDrivenTimetableGenerator")
     private final TimetableGenerator timetableGenerator;
 
-    public List<TimetableAssignment> generateMondayTimetable(
+    public Object generateMondayTimetable(
             TimetableGenerationRequest request) {
 
         String workingDayName = request.getWorkingDayName();
@@ -71,6 +76,14 @@ public class TimetableGenerationService {
 
         if (workingDay == null) {
             return new ArrayList<>();
+        }
+
+        FeasibilityReport feasibilityReport = feasibilityEngine.validate(feasibilityRequest(
+                request.getClassIds(),
+                request.getSectionIds(),
+                java.util.Collections.singletonList(workingDay.getId())));
+        if (!feasibilityReport.isFeasible()) {
+            return feasibilityReport;
         }
 
         List<Long> teacherIds = request.getTeacherIds();
@@ -195,24 +208,28 @@ public class TimetableGenerationService {
      * @return List of generated TimetableAssignments
      */
     @Transactional
-    public List<TimetableAssignment> generateSingleSectionTimetable(
+    public Object generateSingleSectionTimetable(
             SimpleTimetableGenerationRequest request) {
+
+        List<Long> workingDayIds = (request.getWorkingDayIds() == null
+                ? java.util.Collections.<Long>emptyList()
+                : request.getWorkingDayIds())
+                .stream()
+                .filter(id -> id != null && id > 0)
+                .distinct()
+                .sorted()
+                .collect(Collectors.toList());
+
+        FeasibilityReport feasibilityReport = feasibilityEngine.validate(feasibilityRequest(request, workingDayIds));
+        if (!feasibilityReport.isFeasible()) {
+            return feasibilityReport;
+        }
 
         // Validate inputs
         if ((request.getClassId() == null || request.getClassId() <= 0)
                 && (request.getSectionId() == null || request.getSectionId() <= 0)) {
             return new ArrayList<>();
         }
-
-        if (request.getWorkingDayIds() == null || request.getWorkingDayIds().isEmpty()) {
-            return new ArrayList<>();
-        }
-
-        List<Long> workingDayIds = request.getWorkingDayIds().stream()
-                .filter(id -> id != null && id > 0)
-                .distinct()
-                .sorted()
-                .collect(Collectors.toList());
 
         if (workingDayIds.isEmpty()) {
             return new ArrayList<>();
@@ -264,5 +281,32 @@ public class TimetableGenerationService {
                         workingDays,
                         periods,
                         allTeachers));
+    }
+
+    private FeasibilityRequest feasibilityRequest(
+            SimpleTimetableGenerationRequest request,
+            List<Long> workingDayIds) {
+
+        FeasibilityRequest feasibilityRequest = new FeasibilityRequest();
+        if (request.getClassId() != null && request.getClassId() > 0) {
+            feasibilityRequest.setClassIds(java.util.Collections.singletonList(request.getClassId()));
+        }
+        if (request.getSectionId() != null && request.getSectionId() > 0) {
+            feasibilityRequest.setSectionIds(java.util.Collections.singletonList(request.getSectionId()));
+        }
+        feasibilityRequest.setWorkingDayIds(workingDayIds);
+        return feasibilityRequest;
+    }
+
+    private FeasibilityRequest feasibilityRequest(
+            List<Long> classIds,
+            List<Long> sectionIds,
+            List<Long> workingDayIds) {
+
+        FeasibilityRequest feasibilityRequest = new FeasibilityRequest();
+        feasibilityRequest.setClassIds(classIds);
+        feasibilityRequest.setSectionIds(sectionIds);
+        feasibilityRequest.setWorkingDayIds(workingDayIds);
+        return feasibilityRequest;
     }
 }

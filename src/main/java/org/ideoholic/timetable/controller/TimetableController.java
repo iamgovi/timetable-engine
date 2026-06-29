@@ -35,14 +35,14 @@ public class TimetableController {
     }
 
     @PostMapping("/generate/monday")
-    public List<TimetableAssignment> generateMonday(
+    public Object generateMonday(
             @RequestBody TimetableGenerationRequest request) {
 
         return generationService.generateMondayTimetable(request);
     }
 
     @PostMapping("/generate/single-section")
-    public List<TimetableAssignment> generateSingleSection(
+    public Object generateSingleSection(
             @RequestBody SimpleTimetableGenerationRequest request) {
 
         return generationService.generateSingleSectionTimetable(request);
