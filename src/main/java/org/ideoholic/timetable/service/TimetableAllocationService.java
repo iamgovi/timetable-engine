@@ -84,7 +84,7 @@ public class TimetableAllocationService {
 
         // If identical assignment already exists, treat as idempotent success
         TimetableAssignment existing = assignmentRepository.findByTeacherAndWorkingDayAndPeriod(
-            teacher, workingDay, period);
+            teacher, workingDay, period);//section ---- period
 
         if (existing != null) {
             boolean sameTeacher = existing.getTeacher() != null && teacher != null
@@ -123,21 +123,27 @@ public class TimetableAllocationService {
     }
 
     private Subject resolveSubject(TimetableAllocationRequest request) {
+        if (request.getSubjectId() != null) {
+            Subject subject = subjectRepository.findById(request.getSubjectId()).orElse(null);
+            if (subject == null) {
+                return null;
+            }
+
+            if (request.getTeacherId() != null) {
+                return teacherSubjectMappingService.isTeacherMappedToSubject(
+                        request.getTeacherId(), subject.getId())
+                        ? subject
+                        : null;
+            }
+
+            return subject;
+        }
+
         if (request.getTeacherId() == null) {
             return null;
         }
 
-        Subject mappedSubject = teacherSubjectMappingService.findSubjectForTeacher(
+        return teacherSubjectMappingService.findSubjectForTeacher(
                 request.getTeacherId());
-
-        if (mappedSubject != null) {
-            return mappedSubject;
-        }
-
-        if (request.getSubjectId() != null) {
-            return subjectRepository.findById(request.getSubjectId()).orElse(null);
-        }
-
-        return null;
     }
 }

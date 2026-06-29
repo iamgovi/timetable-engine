@@ -1,18 +1,20 @@
 package org.ideoholic.timetable.dto;
 
+import java.util.List;
+
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * Simplified timetable generation request for a single class and single working day.
+ * Simplified timetable generation request for a single class and selected working days.
  * 
  * This is used for Phase 1: Single Class + Multiple Sections + Monday generation.
  * 
  * Example:
  * {
  *   "classId": 1,
- *   "workingDayId": 1
+ *   "workingDayIds": [1, 2, 3, 4, 5]
  * }
  */
 @Data
@@ -31,7 +33,7 @@ public class SimpleTimetableGenerationRequest {
     private Long sectionId;
 
     /**
-     * The ID of the working day (e.g., Monday)
+     * The IDs of the working days to generate sequentially.
      */
-    private Long workingDayId;
+    private List<Long> workingDayIds;
 }

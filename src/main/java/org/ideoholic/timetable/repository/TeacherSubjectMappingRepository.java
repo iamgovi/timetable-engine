@@ -10,4 +10,7 @@ public interface TeacherSubjectMappingRepository
 
     java.util.Optional<TeacherSubjectMapping> findByTeacherId(
             Long teacherId);
+
+    java.util.List<TeacherSubjectMapping> findBySubjectId(
+            Long subjectId);
 }

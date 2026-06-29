@@ -3,11 +3,10 @@ import React, { useState } from 'react';
 /**
  * SingleSectionTimetableGenerator Component
  * 
- * Generates a timetable for a single section on a single working day.
- * Phase 1 of phased timetable generation.
+ * Generates a timetable for a class or section on selected working days.
  * 
  * Features:
- * - Simple form to select section and working day
+ * - Simple form to select section/class and working days
  * - Calls /api/timetable/generate/single-section endpoint
  * - Displays generated timetable in human-readable format
  * - Shows loading state and error handling
@@ -16,7 +15,7 @@ import React, { useState } from 'react';
 export default function SingleSectionTimetableGenerator() {
   const [classId, setClassId] = useState('');
   const [sectionId, setSectionId] = useState('');
-  const [workingDayId, setWorkingDayId] = useState('');
+  const [workingDayIds, setWorkingDayIds] = useState([]);
   const [assignments, setAssignments] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -25,8 +24,8 @@ export default function SingleSectionTimetableGenerator() {
   const handleGenerate = async (e) => {
     e.preventDefault();
     
-    if ((!classId && !sectionId) || !workingDayId) {
-      setError('Please provide a class ID or section ID, and select a working day');
+    if ((!classId && !sectionId) || workingDayIds.length === 0) {
+      setError('Please provide a class ID or section ID, and select at least one working day');
       return;
     }
 
@@ -35,7 +34,7 @@ export default function SingleSectionTimetableGenerator() {
     setSuccess(false);
 
     const payload = {
-      workingDayId: parseInt(workingDayId),
+      workingDayIds,
     };
 
     if (classId) {
@@ -65,11 +64,18 @@ export default function SingleSectionTimetableGenerator() {
         setError('No timetable could be generated. Check logs for details.');
         setAssignments([]);
       } else {
-        // Sort by section ID and period number for display
         const sorted = [...data].sort((a, b) => {
+          const dayA = a.workingDay?.id || 0;
+          const dayB = b.workingDay?.id || 0;
+
+          if (dayA !== dayB) {
+            return dayA - dayB;
+          }
+
           if (a.section.id !== b.section.id) {
             return a.section.id - b.section.id;
           }
+
           return a.period.periodNumber - b.period.periodNumber;
         });
         setAssignments(sorted);
@@ -86,17 +92,35 @@ export default function SingleSectionTimetableGenerator() {
   const exportTimetableAsText = () => {
     let timetableTarget = classId ? `Class ${classId}` : `Section ${sectionId}`;
     let text = `Timetable for ${timetableTarget}\n`;
-    text += `Working Day: ${workingDayId}\n\n`;
+    text += `Working Days: ${workingDayIds.join(', ')}\n\n`;
     assignments.forEach((a) => {
-      text += `P${a.period.periodNumber}: ${a.subject.subjectName} (${a.teacher.name})\n`;
+      text += `${a.workingDay?.dayName || `Day ${a.workingDay?.id}`}, P${a.period.periodNumber}: ${a.subject.subjectName} (${a.teacher.name})\n`;
     });
     return text;
   };
 
+  const handleWorkingDayChange = (dayId) => {
+    setWorkingDayIds((current) => {
+      if (current.includes(dayId)) {
+        return current.filter((id) => id !== dayId);
+      }
+
+      return [...current, dayId].sort((a, b) => a - b);
+    });
+  };
+
+  const workingDays = [
+    { id: 1, name: 'Monday' },
+    { id: 2, name: 'Tuesday' },
+    { id: 3, name: 'Wednesday' },
+    { id: 4, name: 'Thursday' },
+    { id: 5, name: 'Friday' },
+  ];
+
   return (
     <div style={styles.container}>
       <h1>Class / Section Timetable Generator</h1>
-      <p style={styles.subtitle}>Phase 1: Generate Monday timetable for one class or one section</p>
+      <p style={styles.subtitle}>Generate selected working days for one class or one section</p>
 
       {/* Form Section */}
       <form onSubmit={handleGenerate} style={styles.form}>
@@ -125,16 +149,19 @@ export default function SingleSectionTimetableGenerator() {
         </div>
 
         <div style={styles.formGroup}>
-          <label htmlFor="workingDayId">Working Day ID:</label>
-          <input
-            id="workingDayId"
-            type="number"
-            value={workingDayId}
-            onChange={(e) => setWorkingDayId(e.target.value)}
-            placeholder="e.g., 1"
-            min="1"
-            required
-          />
+          <span>Working Days:</span>
+          <div style={styles.checkboxGroup}>
+            {workingDays.map((day) => (
+              <label key={day.id} style={styles.checkboxLabel}>
+                <input
+                  type="checkbox"
+                  checked={workingDayIds.includes(day.id)}
+                  onChange={() => handleWorkingDayChange(day.id)}
+                />
+                {day.name}
+              </label>
+            ))}
+          </div>
         </div>
 
         <button
@@ -172,6 +199,7 @@ export default function SingleSectionTimetableGenerator() {
             <table style={styles.table}>
               <thead>
                 <tr style={styles.tableHeader}>
+                  <th style={styles.th}>Day</th>
                   <th style={styles.th}>Period</th>
                   <th style={styles.th}>Section</th>
                   <th style={styles.th}>Subject</th>
@@ -181,6 +209,7 @@ export default function SingleSectionTimetableGenerator() {
               <tbody>
                 {assignments.map((assignment, index) => (
                   <tr key={assignment.id} style={index % 2 === 0 ? styles.tableRowEven : styles.tableRowOdd}>
+                    <td style={styles.td}>{assignment.workingDay?.dayName || assignment.workingDay?.id || '-'}</td>
                     <td style={styles.td}>
                       <strong>P{assignment.period.periodNumber}</strong>
                     </td>
@@ -201,7 +230,7 @@ export default function SingleSectionTimetableGenerator() {
               const url = URL.createObjectURL(blob);
               const a = document.createElement('a');
               a.href = url;
-              a.download = `timetable_section_${sectionId}.txt`;
+              a.download = `timetable_${classId ? `class_${classId}` : `section_${sectionId}`}.txt`;
               a.click();
               URL.revokeObjectURL(url);
             }}
@@ -235,9 +264,9 @@ export default function SingleSectionTimetableGenerator() {
       <div style={styles.infoSection}>
         <h3>How It Works</h3>
         <ul>
-          <li>Enter a section ID (e.g., 4 for class 8-A)</li>
-          <li>Enter a working day ID (e.g., 1 for Monday)</li>
-          <li>The system will generate a timetable for all periods</li>
+          <li>Enter a class ID to generate all sections, or a section ID for one section</li>
+          <li>Select one or more working days</li>
+          <li>The system generates selected days sequentially</li>
           <li>Each assignment is validated against all rules</li>
           <li>Teachers are rotated to ensure fair distribution</li>
         </ul>
@@ -267,15 +296,19 @@ const styles = {
   formGroup: {
     marginBottom: '15px',
     display: 'flex',
-    alignItems: 'center',
-    gap: '10px',
-  },
-  formGroup: {
-    marginBottom: '15px',
-    display: 'flex',
     gap: '15px',
     alignItems: 'center',
     flexWrap: 'wrap',
+  },
+  checkboxGroup: {
+    display: 'flex',
+    gap: '12px',
+    flexWrap: 'wrap',
+  },
+  checkboxLabel: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
   },
   button: {
     padding: '10px 20px',

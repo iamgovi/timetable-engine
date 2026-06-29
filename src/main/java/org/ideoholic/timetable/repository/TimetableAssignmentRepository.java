@@ -23,6 +23,11 @@ public interface TimetableAssignmentRepository
             Section section,
             Subject subject);
 
+    long countBySectionAndSubjectAndWorkingDay(
+            Section section,
+            Subject subject,
+            WorkingDay workingDay);
+
     TimetableAssignment findByTeacherAndWorkingDayAndPeriod(
             Teacher teacher,
             WorkingDay workingDay,
@@ -33,13 +38,41 @@ public interface TimetableAssignmentRepository
             WorkingDay workingDay,
             Period period);
 
+    List<TimetableAssignment> findBySectionAndWorkingDayIdLessThan(
+            Section section,
+            Long workingDayId);
+
     boolean existsBySectionAndWorkingDayAndSubjectAndPeriodPeriodNumberLessThan(
             Section section,
             WorkingDay workingDay,
             Subject subject,
             Integer periodNumber);
 
+    TimetableAssignment findBySectionAndWorkingDayAndPeriodPeriodNumber(
+            Section section,
+            WorkingDay workingDay,
+            Integer periodNumber);
+
+    boolean existsBySectionAndWorkingDayAndSubjectAndPeriodPeriodNumber(
+            Section section,
+            WorkingDay workingDay,
+            Subject subject,
+            Integer periodNumber);
+
+    List<TimetableAssignment> findBySectionAndWorkingDay(
+            Section section,
+            WorkingDay workingDay);
+
     List<TimetableAssignment> findByWorkingDayAndPeriod(
             WorkingDay workingDay,
             Period period);
+
+    TimetableAssignment findFirstBySectionAndPeriodAndWorkingDayIdLessThanOrderByWorkingDayIdDesc(
+            Section section,
+            Period period,
+            Long workingDayId);
+
+    void deleteBySectionInAndWorkingDayIdIn(
+            List<Section> sections,
+            List<Long> workingDayIds);
 }

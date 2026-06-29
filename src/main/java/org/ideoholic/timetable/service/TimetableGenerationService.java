@@ -13,6 +13,8 @@ import org.ideoholic.timetable.dto.TimetableAllocationRequest;
 import org.ideoholic.timetable.dto.TimetableAllocationResponse;
 import org.ideoholic.timetable.dto.TimetableGenerationRequest;
 import org.ideoholic.timetable.dto.SimpleTimetableGenerationRequest;
+import org.ideoholic.timetable.engine.generation.TimetableGenerationPlan;
+import org.ideoholic.timetable.engine.generation.TimetableGenerator;
 import org.ideoholic.timetable.entity.Period;
 import org.ideoholic.timetable.entity.Section;
 import org.ideoholic.timetable.entity.Teacher;
@@ -23,7 +25,9 @@ import org.ideoholic.timetable.repository.SectionRepository;
 import org.ideoholic.timetable.repository.TeacherRepository;
 import org.ideoholic.timetable.repository.TimetableAssignmentRepository;
 import org.ideoholic.timetable.repository.WorkingDayRepository;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import lombok.RequiredArgsConstructor;
 
@@ -43,6 +47,9 @@ public class TimetableGenerationService {
 
     private final TimetableAssignmentRepository assignmentRepository;
 
+    @Qualifier("subjectDrivenTimetableGenerator")
+    private final TimetableGenerator timetableGenerator;
+
     public List<TimetableAssignment> generateMondayTimetable(
             TimetableGenerationRequest request) {
 
@@ -51,8 +58,16 @@ public class TimetableGenerationService {
             workingDayName = "Monday";
         }
 
-        WorkingDay workingDay = workingDayRepository.findByDayNameIgnoreCase(
-                workingDayName);
+        WorkingDay workingDay = null;
+
+        if (request.getWorkingDayId() != null && request.getWorkingDayId() > 0) {
+            workingDay = workingDayRepository.findById(request.getWorkingDayId()).orElse(null);
+        }
+
+        if (workingDay == null) {
+            workingDay = workingDayRepository.findByDayNameIgnoreCase(
+                    workingDayName);
+        }
 
         if (workingDay == null) {
             return new ArrayList<>();
@@ -161,7 +176,7 @@ public class TimetableGenerationService {
     }
 
     /**
-     * Generates a high-quality timetable for a single section on a single working day.
+     * Generates a high-quality timetable for selected sections and working days.
      * 
      * This is Phase 1 of timetable generation (Single Section + Monday).
      * 
@@ -176,9 +191,10 @@ public class TimetableGenerationService {
      * - Rule engine correctness
      * - Fair teacher utilization within the section
      * 
-     * @param request SimpleTimetableGenerationRequest containing sectionId and workingDayId
+     * @param request SimpleTimetableGenerationRequest containing class/section and workingDayIds
      * @return List of generated TimetableAssignments
      */
+    @Transactional
     public List<TimetableAssignment> generateSingleSectionTimetable(
             SimpleTimetableGenerationRequest request) {
 
@@ -188,7 +204,17 @@ public class TimetableGenerationService {
             return new ArrayList<>();
         }
 
-        if (request.getWorkingDayId() == null || request.getWorkingDayId() <= 0) {
+        if (request.getWorkingDayIds() == null || request.getWorkingDayIds().isEmpty()) {
+            return new ArrayList<>();
+        }
+
+        List<Long> workingDayIds = request.getWorkingDayIds().stream()
+                .filter(id -> id != null && id > 0)
+                .distinct()
+                .sorted()
+                .collect(Collectors.toList());
+
+        if (workingDayIds.isEmpty()) {
             return new ArrayList<>();
         }
 
@@ -207,9 +233,12 @@ public class TimetableGenerationService {
             return new ArrayList<>();
         }
 
-        // Fetch the working day
-        WorkingDay workingDay = workingDayRepository.findById(request.getWorkingDayId()).orElse(null);
-        if (workingDay == null) {
+        List<WorkingDay> workingDays = workingDayRepository.findAllById(workingDayIds)
+                .stream()
+                .sorted(Comparator.comparingLong(WorkingDay::getId))
+                .collect(Collectors.toList());
+
+        if (workingDays.isEmpty()) {
             return new ArrayList<>();
         }
 
@@ -227,77 +256,13 @@ public class TimetableGenerationService {
             return new ArrayList<>();
         }
 
-        // Track teachers already assigned in each period across persisted assignments and new allocations
-        Map<Long, Set<Long>> occupiedTeacherIdsByPeriod = new HashMap<>();
-        for (Period period : periods) {
-            Set<Long> occupiedTeacherIds = assignmentRepository
-                    .findByWorkingDayAndPeriod(workingDay, period)
-                    .stream()
-                    .map(assignment -> assignment.getTeacher().getId())
-                    .collect(Collectors.toSet());
-            occupiedTeacherIdsByPeriod.put(period.getId(), occupiedTeacherIds);
-        }
+        assignmentRepository.deleteBySectionInAndWorkingDayIdIn(sections, workingDayIds);
 
-        List<TimetableAssignment> generated = new ArrayList<>();
-
-        for (Section section : sections) {
-            Map<Long, Integer> teacherUsageCount = new HashMap<>();
-            Set<Long> teachersUsedInSection = new HashSet<>();
-
-            for (Period period : periods) {
-                Long periodId = period.getId();
-                Set<Long> occupiedTeacherIds = occupiedTeacherIdsByPeriod
-                        .computeIfAbsent(periodId, k -> new HashSet<>());
-
-                List<Teacher> candidates = allTeachers.stream()
-                        .filter(teacher -> !occupiedTeacherIds.contains(teacher.getId()))
-                        .sorted(Comparator
-                                .comparingInt((Teacher teacher) -> teachersUsedInSection.contains(
-                                        teacher.getId()) ? 1 : 0)
-                                .thenComparingInt(teacher -> teacherUsageCount.getOrDefault(
-                                        teacher.getId(), 0))
-                                .thenComparingLong(Teacher::getId))
-                        .collect(Collectors.toList());
-
-                if (candidates.isEmpty()) {
-                    continue;
-                }
-
-                boolean assigned = false;
-                for (Teacher teacher : candidates) {
-                    TimetableAllocationRequest allocationRequest = new TimetableAllocationRequest();
-                    allocationRequest.setTeacherId(teacher.getId());
-                    allocationRequest.setSectionId(section.getId());
-                    allocationRequest.setWorkingDayId(workingDay.getId());
-                    allocationRequest.setPeriodId(periodId);
-
-                    TimetableAllocationResponse response = allocationService.allocate(
-                            allocationRequest);
-
-                    if (Boolean.TRUE.equals(response.getSuccess())) {
-                        TimetableAssignment assignment = assignmentRepository
-                                .findByTeacherAndWorkingDayAndPeriod(teacher, workingDay, period);
-
-                        if (assignment != null) {
-                            generated.add(assignment);
-                            occupiedTeacherIds.add(teacher.getId());
-                            teachersUsedInSection.add(teacher.getId());
-                            teacherUsageCount.merge(teacher.getId(), 1, Integer::sum);
-                            assigned = true;
-                            break;
-                        }
-                    }
-                }
-
-                if (!assigned) {
-                    System.out.println(
-                            "Warning: Could not assign teacher for section=" + section.getId()
-                                    + ", workingDay=" + workingDay.getId()
-                                    + ", period=" + periodId);
-                }
-            }
-        }
-
-        return generated;
+        return timetableGenerator.generate(
+                new TimetableGenerationPlan(
+                        sections,
+                        workingDays,
+                        periods,
+                        allTeachers));
     }
 }

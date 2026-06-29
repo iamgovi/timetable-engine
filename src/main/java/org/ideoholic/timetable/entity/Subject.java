@@ -29,6 +29,9 @@ public class Subject {
     @Column(name = "weekly_periods")
     private Integer weeklyPeriods;
 
+    @Column(name = "daily_periods")
+    private Integer dailyPeriods;
+
     @ManyToOne
     @JoinColumn(name = "prerequisite_subject_id")
     private Subject prerequisiteSubject;

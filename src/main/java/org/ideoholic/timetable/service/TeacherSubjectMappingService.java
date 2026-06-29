@@ -36,4 +36,18 @@ public class TeacherSubjectMappingService {
 
         return null;
     }
+
+    public java.util.List<TeacherSubjectMapping> findBySubjectId(Long subjectId) {
+        return repository.findBySubjectId(subjectId);
+    }
+
+    public boolean isTeacherMappedToSubject(Long teacherId, Long subjectId) {
+        if (teacherId == null || subjectId == null) {
+            return false;
+        }
+
+        Optional<TeacherSubjectMapping> mapping = repository.findByTeacherId(teacherId);
+        return mapping.isPresent() && mapping.get().getSubject() != null
+                && mapping.get().getSubject().getId().equals(subjectId);
+    }
 }

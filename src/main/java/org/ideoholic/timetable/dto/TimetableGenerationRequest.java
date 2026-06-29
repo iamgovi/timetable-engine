@@ -15,6 +15,8 @@ public class TimetableGenerationRequest {
 
     private String workingDayName;
 
+    private Long workingDayId;
+
     public List<Long> getTeacherIds() {
         return teacherIds;
     }
@@ -45,5 +47,13 @@ public class TimetableGenerationRequest {
 
     public void setWorkingDayName(String workingDayName) {
         this.workingDayName = workingDayName;
+    }
+
+    public Long getWorkingDayId() {
+        return workingDayId;
+    }
+
+    public void setWorkingDayId(Long workingDayId) {
+        this.workingDayId = workingDayId;
     }
 }
